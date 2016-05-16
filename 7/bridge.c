@@ -6,6 +6,16 @@
 #include <string.h>
 #include <pthread.h>
 
+//added new libraries:
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+
+//defined server
+#define SERVER_PORT 10000
+#define SERVER_ADDR "127.0.0.1"
+#define DATA_LENGTH 256
+
 struct list_object_s {
     char *string;                   /* 8 bytes */
     int strlen;                     /* 4 bytes */
@@ -65,6 +75,7 @@ static struct list_object_s *list_get_first(void)
 
 
 
+//forking
 static void *print_and_free(void *arg) {
     struct list_object_s *cur_object;
     printf("thread is starting\n");
@@ -91,6 +102,7 @@ while (1) {
 
 
 
+//holds lock while flushing
 static void list_flush(void)
 {
 	pthread_mutex_lock(&list_lock);
@@ -104,20 +116,106 @@ static void list_flush(void)
 
 
 
+static void server(void)
+{
+int sock, bytes;
+pthread_t print_thread;
+struct sockaddr_in server_loc;
+struct sockaddr_in client_loc;
+socklen_t client_llen;
+char data [DATA_LENGTH];
+
+printf("starting server - \n");
+pthread_create(&print_thread, NULL, print_and_free, NULL);
+
+if((sock = socket(AF_INET, SOCK_DGRAM, 0))<0)
+	{
+	printf("Socket error\n");
+	exit(EXIT_FAILURE);
+	}
+
+memset(&server_loc, 0, sizeof(struct sockaddr_in)); // sets aside memory
+server_loc.sin_family = AF_INET;
+server_loc.sin_port = htons(SERVER_PORT);
+server_loc.sin_addr.s_addr = INADDR_ANY;
+
+if (bind(sock, (struct sockaddr *) &server_loc, 
+	sizeof(struct sockaddr_in)) <0)
+	{
+	printf("binding error\n");
+	exit(EXIT_FAILURE);
+	}
+
+while(1)
+	{
+	client_llen = sizeof(client_loc);
+	bytes = recvfrom(sock, data, sizeof(data), 0,
+		(struct sockaddr *) &client_loc, &client_llen);
+
+	if (bytes <0)
+		{
+		printf("receipt error\n");
+		exit(EXIT_FAILURE);
+		}
+	add_to_list(data);
+	}
+list_flush();
+}
+
+
+
+static void client(int counter_given, int counter)
+{
+int sock;
+struct sockaddr_in loc; // socket location
+char input[256]; // on stack
+if ((sock = socket(AF_INET, SOCK_DGRAM, 0))<0)
+	{
+	printf("socket error\n");
+	exit(EXIT_FAILURE);
+	}
+memset(&loc, 0, sizeof(loc));
+loc.sin_family = AF_INET;
+loc.sin_port = htons(SERVER_PORT);
+loc.sin_addr.s_addr = inet_addr(SERVER_ADDR);
+
+if(connect(sock, (struct sockaddr *) &loc, sizeof(loc)) <0)
+	{
+	printf("server error\n");
+	exit(EXIT_FAILURE);
+	}
+while (scanf("%256s", input) !=EOF) // on the stack
+	{
+	if (send (sock, input, strlen(input) + 1, 0) <0)
+		{
+		printf("send error\n");
+		exit(EXIT_FAILURE);
+		}
+	if (counter_given)
+		{
+		counter--;
+		if(!counter) break;
+		}
+	}
+}
+
+
+
+//forking main
 int main(int argc, char **argv) {
     modbus_t *ctx;
-    int option_index, c, counter, counter_given = 0;
-    char input[256]; /* On the stack */
-    pthread_t print_thread;
+int option_index, c, counter, counter_given = 0, run_server = 0;
+//stack input shifted to client from here
 
     struct option long_options[] = {
         { "count",      required_argument,  0, 'c' },
         { "directive",  no_argument,        0, 'd' },
+	{ "server",	no_argument,	    0, 's' },
         { 0 }
     };
 
     while (1) {
-        c = getopt_long(argc, argv, "c:d", long_options, &option_index);
+        c = getopt_long(argc, argv, "c:ds", long_options, &option_index);
 
         if (c == -1) break;
 
@@ -130,14 +228,18 @@ int main(int argc, char **argv) {
             case 'd':
                 printf("Got directive argument\n");
                 break;
+	    case 's':
+		run_server = 1;
+		break;
         }
     }
 
-    /* Print out all items of linked list and free them */
+/* Deprecated/ shifted
+    // Print out all items of linked list and free them
     pthread_create(&print_thread, NULL, print_and_free, NULL);
 
     while (scanf("%256s", input) != EOF) {
-        /* Add word to the bottom of a linked list */
+        // Add word to the bottom of a linked list
         add_to_list(input);
         if (counter_given) {
             counter--;
@@ -145,13 +247,13 @@ int main(int argc, char **argv) {
         }
     }
 
-
-
     printf("Linked list object is %li bytes long\n",
                     sizeof(struct list_object_s));
 
 //block until printed
     list_flush();
-
+*/
+	if (run_server) server();
+	else client (counter_given, counter);
     return 0;
 }

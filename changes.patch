@@ -1,0 +1,11 @@
+diff -urN 1/hello_world.c 2/hello_world.c
+--- 1/hello_world.c	2016-02-29 11:37:05.306300817 +1100
++++ 2/hello_world.c	2016-03-07 10:50:03.313690229 +1100
+@@ -2,6 +2,6 @@
+ 
+ int main(void)
+ {
+-        printf("Hello world\n");
++        printf("modified text\n");
+         return 0;
+ }     
